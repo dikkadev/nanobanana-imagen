@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Grid Viewer</title>
+    <style>
+        :root {
+            --bg-color: #0a0a0a;
+            --text-color: #ffffff;
+            --border-color: #2a2a2a;
+            --input-bg: #1a1a1a;
+            --input-border: #333333;
+        }
+
+        [data-theme="light"] {
+            --bg-color: #ffffff;
+            --text-color: #000000;
+            --border-color: #cccccc;
+            --input-bg: #f5f5f5;
+            --input-border: #dddddd;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 10px;
+            transition: background-color 0.3s, color 0.3s;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .controls {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            margin-bottom: 10px;
+            flex-wrap: wrap;
+        }
+
+        .input-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        label {
+            font-weight: bold;
+        }
+
+        input[type="number"] {
+            padding: 6px 10px;
+            border: 1px solid var(--input-border);
+            border-radius: 4px;
+            background-color: var(--input-bg);
+            color: var(--text-color);
+            width: 70px;
+        }
+
+        .theme-toggle {
+            background-color: var(--input-bg);
+            border: 1px solid var(--input-border);
+            color: var(--text-color);
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        .theme-toggle:hover {
+            background-color: var(--border-color);
+        }
+
+        .status {
+            font-size: 12px;
+            color: var(--text-color);
+            opacity: 0.7;
+            margin-left: auto;
+        }
+
+        .grid-container {
+            flex: 1;
+            display: grid;
+            gap: 2px;
+            padding: 2px;
+            background-color: var(--border-color);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .image-item {
+            background-color: var(--input-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 2px;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+
+        .image-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            display: block;
+            transition: opacity 0.2s ease-in-out;
+        }
+
+        .image-item img.loading {
+            opacity: 0.3;
+        }
+
+        .image-label {
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 2px 6px;
+            border-radius: 2px;
+            font-size: 10px;
+            font-weight: bold;
+        }
+
+        .error {
+            color: #ff6b6b;
+            font-size: 12px;
+            text-align: center;
+            padding: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="controls">
+        <div class="input-group">
+            <label for="n-input">N:</label>
+            <input type="number" id="n-input" value="4" min="1" max="99">
+        </div>
+        <button class="theme-toggle" onclick="toggleTheme()">🌓 Toggle Theme</button>
+        <div class="status" id="status">Loading...</div>
+    </div>
+
+    <div class="grid-container" id="grid-container"></div>
+
+    <script>
+        let currentN = 4;
+        let refreshInterval;
+
+        function toggleTheme() {
+            const html = document.documentElement;
+            const currentTheme = html.getAttribute('data-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            html.setAttribute('data-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+        }
+
+        function loadTheme() {
+            const savedTheme = localStorage.getItem('theme') || 'dark';
+            document.documentElement.setAttribute('data-theme', savedTheme);
+        }
+
+        function calculateGridColumns(n) {
+            if (n <= 1) return 1;
+            if (n <= 4) return 2;
+            if (n <= 9) return 3;
+            if (n <= 16) return 4;
+            if (n <= 25) return 5;
+            if (n <= 36) return 6;
+            if (n <= 49) return 7;
+            if (n <= 64) return 8;
+            if (n <= 81) return 9;
+            return 10;
+        }
+
+        function createImageGrid() {
+            const container = document.getElementById('grid-container');
+            container.innerHTML = '';
+            
+            const cols = calculateGridColumns(currentN);
+            container.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+            
+            let loadedCount = 0;
+            let errorCount = 0;
+            
+            for (let i = 1; i <= currentN; i++) {
+                const imageItem = document.createElement('div');
+                imageItem.className = 'image-item';
+                
+                const img = document.createElement('img');
+                img.src = `output-${i}.png`;
+                img.alt = `Output ${i}`;
+                img.dataset.index = i;
+                
+                const label = document.createElement('div');
+                label.className = 'image-label';
+                label.textContent = `${i}`;
+                
+                img.onload = function() {
+                    loadedCount++;
+                    updateStatus(loadedCount, errorCount);
+                };
+                
+                img.onerror = function() {
+                    errorCount++;
+                    imageItem.innerHTML = `<div class="error">output-${i}.png<br>not found</div>`;
+                    updateStatus(loadedCount, errorCount);
+                };
+                
+                imageItem.appendChild(img);
+                imageItem.appendChild(label);
+                container.appendChild(imageItem);
+            }
+        }
+
+        function refreshImages() {
+            const images = document.querySelectorAll('.image-item img');
+            const timestamp = new Date().getTime();
+            
+            images.forEach(img => {
+                const index = img.dataset.index;
+                const newImg = new Image();
+                newImg.onload = function() {
+                    img.src = newImg.src;
+                };
+                newImg.src = `output-${index}.png?t=${timestamp}`;
+            });
+        }
+
+        function updateStatus(loaded, errors) {
+            const status = document.getElementById('status');
+            const total = currentN;
+            status.textContent = `Last refresh: ${new Date().toLocaleTimeString()}`;
+        }
+
+        function startAutoRefresh() {
+            if (refreshInterval) {
+                clearInterval(refreshInterval);
+            }
+            refreshInterval = setInterval(refreshImages, 1000);
+        }
+
+        document.getElementById('n-input').addEventListener('input', function(e) {
+            const newN = parseInt(e.target.value);
+            if (newN >= 1 && newN <= 99) {
+                currentN = newN;
+                createImageGrid();
+            }
+        });
+
+        document.getElementById('n-input').addEventListener('change', function(e) {
+            const newN = parseInt(e.target.value);
+            if (newN < 1) e.target.value = 1;
+            if (newN > 99) e.target.value = 99;
+            currentN = Math.max(1, Math.min(99, newN));
+            createImageGrid();
+        });
+
+        loadTheme();
+        createImageGrid();
+        startAutoRefresh();
+    </script>
+</body>
+</html>
