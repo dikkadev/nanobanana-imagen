@@ -19,7 +19,7 @@ import requests
 from PIL import Image
 
 
-GEMINI_MODEL = "gemini-3-pro-image-preview"
+GEMINI_MODEL = "gemini-3.1-flash-image-preview"
 GEMINI_ENDPOINT = (
     f"https://generativelanguage.googleapis.com/v1beta/models/"
     f"{GEMINI_MODEL}:generateContent"
@@ -75,12 +75,29 @@ def encode_image(path: str) -> dict:
     }
 
 
-def build_request_body(prompt: str, input_images: list[str] | None) -> dict:
+VALID_IMAGE_SIZES = ("512px", "1K", "2K", "4K")
+VALID_ASPECT_RATIOS = (
+    "1:1", "1:4", "1:8", "2:3", "3:2", "3:4", "4:1",
+    "4:3", "4:5", "5:4", "8:1", "9:16", "16:9", "21:9",
+)
+
+
+def build_request_body(
+    prompt: str,
+    input_images: list[str] | None,
+    *,
+    image_size: str = "1K",
+    aspect_ratio: str | None = None,
+) -> dict:
     parts: list[dict] = [{"text": prompt}]
 
     if input_images:
         for img_path in input_images:
             parts.append(encode_image(img_path))
+
+    image_config: dict = {"imageSize": image_size}
+    if aspect_ratio:
+        image_config["aspectRatio"] = aspect_ratio
 
     return {
         "contents": [
@@ -89,10 +106,7 @@ def build_request_body(prompt: str, input_images: list[str] | None) -> dict:
             }
         ],
         "generationConfig": {
-            "imageConfig": {
-                "aspectRatio": "1:1",
-                "imageSize": "2K",
-            }
+            "imageConfig": image_config,
         },
     }
 
@@ -231,10 +245,19 @@ def make_grid(image_paths: list[Path], out_path: Path) -> None:
                 pass
 
 
-def call_gemini(prompt: str, input_images: list[str], api_key: str) -> bytes:
+def call_gemini(
+    prompt: str,
+    input_images: list[str],
+    api_key: str,
+    *,
+    image_size: str = "1K",
+    aspect_ratio: str | None = None,
+) -> bytes:
     """Single API call that returns image bytes or raises."""
     log("Building request body...")
-    body = build_request_body(prompt, input_images)
+    body = build_request_body(
+        prompt, input_images, image_size=image_size, aspect_ratio=aspect_ratio,
+    )
 
     log("Calling Gemini API...")
     resp = requests.post(
@@ -285,7 +308,7 @@ def call_gemini(prompt: str, input_images: list[str], api_key: str) -> bytes:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Generate a 2K image with Gemini 3 Pro Image (multiple input images supported)."
+        description="Generate images with Nano Banana 2 (Gemini 3.1 Flash Image)."
     )
     parser.add_argument("-p", "--prompt", help="Prompt text.")
     parser.add_argument("-f", "--prompt-file", help="File containing the prompt.")
@@ -314,6 +337,20 @@ def main() -> None:
         default=1,
         help="Number of images to generate from the same prompt and input. Default: 1",
     )
+    parser.add_argument(
+        "-s",
+        "--size",
+        default="1K",
+        choices=VALID_IMAGE_SIZES,
+        help="Image resolution. Default: 1K",
+    )
+    parser.add_argument(
+        "-a",
+        "--aspect-ratio",
+        default=None,
+        choices=VALID_ASPECT_RATIOS,
+        help="Aspect ratio. Omitted by default (API decides).",
+    )
 
     args = parser.parse_args()
     prompt = read_prompt(args)
@@ -336,6 +373,9 @@ def main() -> None:
         prompt_preview = prompt_preview[:77] + "..."
     log(f"Prompt length: {prompt_len} characters")
     log(f"Prompt preview: {prompt_preview!r}")
+    log(f"Image size: {args.size}")
+    if args.aspect_ratio:
+        log(f"Aspect ratio: {args.aspect_ratio}")
     log(f"Number of images to generate: {args.num_images}")
 
     input_images = args.input_images or []
@@ -369,7 +409,10 @@ def main() -> None:
     # --- Parallel generation of images ---
     def generate_and_save(idx: int, out_path: Path) -> Path:
         log(f"--- Generating image {idx}/{len(individual_paths)} ---")
-        img_bytes = call_gemini(prompt, input_images, api_key)
+        img_bytes = call_gemini(
+            prompt, input_images, api_key,
+            image_size=args.size, aspect_ratio=args.aspect_ratio,
+        )
         out_path.write_bytes(img_bytes)
         try:
             size = out_path.stat().st_size
